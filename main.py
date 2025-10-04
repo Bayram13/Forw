@@ -1,13 +1,16 @@
+from fastapi import FastAPI, Request
+from telegram import Bot, Update
 import re
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+import os
+import uvicorn
 
-# ⚙️ Parametrlər
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # @BotFather-dan aldığın token
-A_CHANNEL = -100123456789           # Mənbə kanal ID
-B_CHANNEL = -100987654321           # Hədəf kanal ID
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+A_CHANNEL = int(os.environ.get("A_CHANNEL"))
+B_CHANNEL = int(os.environ.get("B_CHANNEL"))
 
-# --- Mesajı analiz edən funksiya ---
+bot = Bot(token=BOT_TOKEN)
+app = FastAPI()
+
 def check_conditions(text: str) -> bool:
     text_lower = text.lower()
     mc_match = re.search(r"mc[:\s]*\$?([\d.,]+)k?", text_lower)
@@ -16,58 +19,36 @@ def check_conditions(text: str) -> bool:
     top10_match = re.search(r"top\s*10\s*holders[:\s]*([\d.,]+)%", text_lower)
     multiplier_match = re.search(r"\b(\d+)x\b", text_lower)
 
-    # Şərtlər
     if mc_match:
         val = float(mc_match.group(1).replace(",", ""))
         if "k" in text_lower:
             val *= 1000
         if val > 15000:
             return True
-
-    if dev_match:
-        val = float(dev_match.group(1).replace(",", ""))
-        if val < 3:
-            return True
-
-    if holders_match:
-        val = float(holders_match.group(1).replace(",", ""))
-        if val > 30:
-            return True
-
-    if top10_match:
-        val = float(top10_match.group(1).replace(",", ""))
-        if val < 20:
-            return True
-
+    if dev_match and float(dev_match.group(1).replace(",", "")) < 3:
+        return True
+    if holders_match and float(holders_match.group(1).replace(",", "")) > 30:
+        return True
+    if top10_match and float(top10_match.group(1).replace(",", "")) < 20:
+        return True
     if multiplier_match:
         return True
-
     return False
 
+@app.post(f"/{BOT_TOKEN}")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    update = Update.de_json(data, bot)
+    message = update.channel_post
+    if not message or message.chat.id != A_CHANNEL:
+        return {"ok": True}
 
-# --- Yeni mesajlarda işləyən funksiya ---
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.channel_post:
-        return
-    if update.channel_post.chat_id != A_CHANNEL:
-        return
-
-    text = update.channel_post.text or ""
+    text = message.text or ""
     if check_conditions(text):
-        # “Follow” sətrlərini sil
-        clean_text = "\n".join(
-            [line for line in text.splitlines() if "follow" not in line.lower()]
-        )
-        await context.bot.send_message(chat_id=B_CHANNEL, text=clean_text)
+        clean_text = "\n".join([line for line in text.splitlines() if "follow" not in line.lower()])
+        bot.send_message(B_CHANNEL, clean_text)
 
-
-# --- Botun işə salınması ---
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.ALL, message_handler))
-    print("✅ Bot işə düşdü...")
-    app.run_polling()
-
+    return {"ok": True}
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
