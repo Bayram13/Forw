@@ -1,6 +1,6 @@
 services:
-  - type: worker
-    name: telegram-filter-bot
+  - type: web
+    name: Forw
     env: python
     buildCommand: ""
     startCommand: python main.py
