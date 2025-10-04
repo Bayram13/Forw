@@ -1,1 +1,6 @@
-
+services:
+  - type: worker
+    name: telegram-filter-bot
+    env: python
+    buildCommand: ""
+    startCommand: python main.py
